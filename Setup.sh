@@ -2,6 +2,7 @@ PREFIX=mfdns
 RG_HUB=$(echo $PREFIX)-hub
 RG_SPOKE=$(echo $PREFIX)-spoke
 LOC=uksouth
+SUBID=$(az account list --query "[?isDefault].id" -o tsv)
 
 VNET_HUB=$(echo $PREFIX)-hub-vnet
 VNET_SPOKE=$(echo $PREFIX)-spoke-vnet
@@ -9,7 +10,7 @@ VNET_SPOKE=$(echo $PREFIX)-spoke-vnet
 VNET_HUB_IPRANGE=10.0.0.0/16
 VNET_SPOKE_IPRANGE=10.1.0.0/16
 
-FIREWALL_SUBNET=firewall
+FIREWALL_SUBNET=AzureFirewallSubnet
 VM_SUBNET=vm
 FIREWALL_SUBNET_IPRANGE=10.0.0.0/24
 VM_SUBNET_IPRANGE=10.0.1.0/24
@@ -29,9 +30,17 @@ STORAGE_CONNECTION_NAME=$(echo $PREFIX)-private-link
 STORAGE_PRIVATE_ENDPOINT=$(echo $PREFIX)-storage-private-endpoint
 STORAGE_DNS_LINK=$(echo $PREFIX)-storage-dns-link
 TABLE_DNS_ZONE=privatelink.table.core.windows.net
+TABLE_NAME=Demo
 
 APPPLAN=$(echo $PREFIX)-appplan
 WEBSITE=$(echo $PREFIX)-site
+
+FWPUBLICIP_NAME=$(echo $PREFIX)-fw-ip
+FWNAME=$(echo $PREFIX)-fw
+FWROUTE_TABLE_NAME="${PREFIX}fwrt"
+FWROUTE_NAME="${PREFIX}fwrn"
+FWROUTE_NAME_INTERNET="${PREFIX}fwinternet"
+FWIPCONFIG_NAME="${PREFIX}fwconfig"
 
 #Create 2 resource groups
 az group create -n $RG_HUB -l $LOC
@@ -54,7 +63,7 @@ az network vnet subnet create -n $DATA_SUBNET -g $RG_SPOKE \
 az network vnet subnet create -n $FIREWALL_SUBNET -g $RG_HUB \
     --address-prefixes $FIREWALL_SUBNET_IPRANGE --vnet-name $VNET_HUB
 
-az network vnet subnet create -n $VM_SUBNET -g $RG_SPOKE \
+az network vnet subnet create -n $VM_SUBNET -g $RG_HUB \
     --address-prefixes $VM_SUBNET_IPRANGE --vnet-name $VNET_HUB
 
 #Peer the Vnets
@@ -68,6 +77,20 @@ az network vnet peering create -g $RG_SPOKE -n $SPOKE_TO_HUB_VNET_PEER --vnet-na
 
 #Deploy a storage account
 az storage account create -n $STORAGE -g $RG_SPOKE --https-only
+
+STORAGEKEY=$(az storage account keys list -g $RG_SPOKE -n $STORAGE --query "[?keyName=='key1'].value" --output tsv)
+
+az storage table create -n $TABLE_NAME --account-name $STORAGE --account-key $STORAGEKEY
+
+az storage entity insert --account-name $STORAGE --account-key $STORAGEKEY \
+    --entity PartitionKey=AAA RowKey=BBB Content=ASDF2 \
+    --if-exists fail --table-name $TABLE_NAME
+
+az storage entity insert --account-name $STORAGE --account-key $STORAGEKEY \
+    --entity PartitionKey=AAA RowKey=CCC Content=MDF01 \
+    --if-exists fail --table-name $TABLE_NAME
+
+az storage account network-rule add -g $RG_SPOKE --account-name $STORAGE --vnet $VNET_SPOKE --subnet $DATA_SUBNET
 
 #Create a private DNS Zone for table storage
 az network private-dns zone create -g $RG_SPOKE -n $TABLE_DNS_ZONE
@@ -102,10 +125,54 @@ az webapp vnet-integration add -g $RG_SPOKE -n $WEBSITE --vnet $VNET_SPOKE --sub
 MYIP=$(curl http://httpbin.org/ip | jq -r '.origin')
 
 #Add access restictions to my IP only
+az webapp config access-restriction add -g $RG_SPOKE -n $WEBSITE --rule-name HomePC --action Allow --ip-address $MYIP --priority 100
 
-#Create the firewall
+#Add my IP to the storage account for debugging
+az storage account network-rule add -g $RG_SPOKE --account-name $STORAGE --ip-address $MYIP
 
-#Create a UDR to route all outbound traffic from the web subnet to the firewall
+#Add the setting to route all traffic though the vnet integration
+az webapp config appsettings set -g $RG_SPOKE -n $WEBSITE --settings WEBSITE_VNET_ROUTE_ALL=1 SCM_DO_BUILD_DURING_DEPLOYMENT=1 WEBSITE_NODE_DEFAULT_VERSION=10.15.2
+
+#Write the storage key and account name to app settings
+az webapp config appsettings set -g $RG_SPOKE -n $WEBSITE --settings STORAGE_ACCOUNT=$STORAGE STORAGE_KEY=$STORAGEKEY TABLE_NAME=$TABLE_NAME
+
+#Deploy my sample node app to the site
+az webapp deployment source config --branch master --manual-integration --name $WEBSITE --repo-url https://github.com/fortunkam/simple-node-express-app --resource-group $RG_SPOKE
+
+#Create the firewall public ip
+az network public-ip create -g $RG_HUB -n $FWPUBLICIP_NAME -l $LOC --sku "Standard"
+
+# Install Azure Firewall preview CLI extension
+
+az extension add --name azure-firewall
+
+# Deploy Azure Firewall
+
+az network firewall create -g $RG_HUB -n $FWNAME -l $LOC
+
+# Configure Firewall IP Config
+
+az network firewall ip-config create \
+    -g $RG_HUB \
+    -f $FWNAME \
+    -n $FWIPCONFIG_NAME \
+    --public-ip-address $FWPUBLICIP_NAME \
+    --vnet-name $VNET_HUB
+
+# Capture Firewall IP Address for Later Use
+
+FWPUBLIC_IP=$(az network public-ip show -g $RG_HUB -n $FWPUBLICIP_NAME --query "ipAddress" -o tsv)
+FWPRIVATE_IP=$(az network firewall show -g $RG_HUB -n $FWNAME --query "ipConfigurations[0].privateIpAddress" -o tsv)
+
+
+# Create UDR and add a route for the web subnet (spoke)
+
+az network route-table create -g $RG_SPOKE --name $FWROUTE_TABLE_NAME
+az network route-table route create -g $RG_SPOKE --name $FWROUTE_NAME --route-table-name $FWROUTE_TABLE_NAME --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $FWPRIVATE_IP --subscription $SUBID
+az network route-table route create -g $RG_SPOKE --name $FWROUTE_NAME_INTERNET --route-table-name $FWROUTE_TABLE_NAME --address-prefix $FWPUBLIC_IP/32 --next-hop-type Internet
+
+#Add the UDR to the network
+az network vnet subnet update -g $RG_SPOKE --vnet-name $VNET_SPOKE --name $WEB_SUBNET --route-table $FWROUTE_TABLE_NAME
 
 #Confirm site is routing via the firewall
 
