@@ -1,7 +1,7 @@
-PREFIX=mfdns
+PREFIX=mfdns01
 RG_HUB=$(echo $PREFIX)-hub
 RG_SPOKE=$(echo $PREFIX)-spoke
-LOC=uksouth
+LOC=eastus2
 SUBID=$(az account list --query "[?isDefault].id" -o tsv)
 
 VNET_HUB=$(echo $PREFIX)-hub-vnet
@@ -42,6 +42,9 @@ FWROUTE_NAME="${PREFIX}fwrn"
 FWROUTE_NAME_INTERNET="${PREFIX}fwinternet"
 FWIPCONFIG_NAME="${PREFIX}fwconfig"
 
+SE_POLICY=$(echo $PREFIX)-se-policy
+SE_STORE_POLICY_DEF=$(echo $PREFIX)-se-store-policy-def
+
 #Create 2 resource groups
 az group create -n $RG_HUB -l $LOC
 az group create -n $RG_SPOKE -l $LOC
@@ -55,10 +58,16 @@ az network vnet subnet create -n $APPGATEWAY_SUBNET -g $RG_SPOKE \
     --address-prefixes $APPGATEWAY_SUBNET_IPRANGE --vnet-name $VNET_SPOKE
 
 az network vnet subnet create -n $WEB_SUBNET -g $RG_SPOKE \
-    --address-prefixes $WEB_SUBNET_IPRANGE --vnet-name $VNET_SPOKE
+    --address-prefixes $WEB_SUBNET_IPRANGE --vnet-name $VNET_SPOKE --service-endpoints "Microsoft.Web"
 
 az network vnet subnet create -n $DATA_SUBNET -g $RG_SPOKE \
-    --address-prefixes $DATA_SUBNET_IPRANGE --vnet-name $VNET_SPOKE
+    --address-prefixes $DATA_SUBNET_IPRANGE --vnet-name $VNET_SPOKE --service-endpoints "Microsoft.Storage" 
+
+az network vnet subnet update \
+  --name $DATA_SUBNET \
+  --resource-group $RG_SPOKE \
+  --vnet-name $VNET_SPOKE \
+  --disable-private-endpoint-network-policies true
 
 az network vnet subnet create -n $FIREWALL_SUBNET -g $RG_HUB \
     --address-prefixes $FIREWALL_SUBNET_IPRANGE --vnet-name $VNET_HUB
