@@ -1,7 +1,7 @@
-PREFIX=mfdns01
+PREFIX=mfdns02
 RG_HUB=$(echo $PREFIX)-hub
 RG_SPOKE=$(echo $PREFIX)-spoke
-LOC=eastus2
+LOC=eastus
 SUBID=$(az account list --query "[?isDefault].id" -o tsv)
 
 VNET_HUB=$(echo $PREFIX)-hub-vnet
