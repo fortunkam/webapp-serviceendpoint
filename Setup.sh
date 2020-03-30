@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 ################################################################################
 # All the required static variables are declared here, most are derived from 
 # a common PREFIX 
