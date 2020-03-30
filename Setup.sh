@@ -5,8 +5,9 @@
 # All the required static variables are declared here, most are derived from 
 # a common PREFIX 
 ################################################################################
+STARTDATE=$(date +"%H:%M:%S")
 
-PREFIX=mfdns02
+PREFIX=mfdns04
 RG_HUB=$(echo $PREFIX)-hub
 RG_SPOKE=$(echo $PREFIX)-spoke
 RG_DEPLOY=$(echo $PREFIX)-deploy
@@ -133,7 +134,7 @@ az network vnet peering create -g $RG_SPOKE -n $SPOKE_TO_HUB_VNET_PEER --vnet-na
 # 2 records.  The storage account uses a private endpoint to restrict traffic 
 # only to the VNET (via a Private DNS Zone)
 ################################################################################
-az storage account create -n $STORAGE -g $RG_SPOKE --https-only --default-action Deny --bypass None
+az storage account create -n $STORAGE -g $RG_SPOKE --https-only
 
 STORAGEKEY=$(az storage account keys list -g $RG_SPOKE -n $STORAGE --query "[?keyName=='key1'].value" --output tsv)
 
@@ -146,6 +147,9 @@ az storage entity insert --account-name $STORAGE --account-key $STORAGEKEY \
 az storage entity insert --account-name $STORAGE --account-key $STORAGEKEY \
     --entity PartitionKey=AAA RowKey=CCC Content=MDF01 \
     --if-exists fail --table-name $TABLE_NAME
+
+#Update the storage account to lock down to non-authorised Azure traffic 
+az storage account update -n $STORAGE -g $RG_SPOKE --https-only --default-action Deny --bypass None
 
 az storage account network-rule add -g $RG_SPOKE --account-name $STORAGE --vnet $VNET_SPOKE --subnet $DATA_SUBNET
 
@@ -167,7 +171,9 @@ NETWORKINTERFACEID=$(az network private-endpoint show --name $STORAGE_PRIVATE_EN
 
 PRIVATEIP=$(az resource show --ids $NETWORKINTERFACEID --api-version 2019-04-01 --query properties.ipConfigurations[0].properties.privateIPAddress -o tsv)
 az network private-dns record-set a create --name $PRIVATEIP --zone-name $TABLE_DNS_ZONE --resource-group $RG_SPOKE  
-az network private-dns record-set a add-record --record-set-name $PRIVATEIP --zone-name $TABLE_DNS_ZONE --resource-group $RG_SPOKE -a $PRIVATEIP
+# az network private-dns record-set a add-record --record-set-name $PRIVATEIP --zone-name $TABLE_DNS_ZONE --resource-group $RG_SPOKE -a $PRIVATEIP
+
+az network private-dns record-set a add-record --record-set-name $STORAGE --zone-name $TABLE_DNS_ZONE --resource-group $RG_SPOKE -a $PRIVATEIP
 
 ################################################################################
 # Create our web application (app plan and website)
@@ -255,7 +261,7 @@ az network firewall application-rule create \
     --action Allow \
     --priority 100 \
     --target-fqdns "httpbin.org" \
-    --source-addresses *
+    --source-addresses "*"
 
 #Add the UDR to the network
 az network vnet subnet update -g $RG_SPOKE --vnet-name $VNET_SPOKE --name $WEB_SUBNET --route-table $FWROUTE_TABLE_NAME
@@ -337,7 +343,7 @@ az storage blob upload \
 SAS_END=`date -u -d "60 minutes" '+%Y-%m-%dT%H:%MZ'`
 DEPLOY_SAS_TOKEN=$(az storage blob generate-sas -c $DEPLOY_SCRIPTS_CONTAINER -n $DEPLOY_DNS_MODULE --permissions r --expiry $SAS_END --https-only --account-key $DEPLOY_STORAGEKEY --account-name $STORAGE_DEPLOY)
 # Remove the quotes
-DEPLOY_SAS_TOKEN=${DEPLOY_SAS_TOKEN//\"/}
+DEPLOY_SAS_TOKEN=${DEPLOY_SAS_TOKEN:1:${#DEPLOY_SAS_TOKEN}-2}
 
 MODULE_URL="https://$STORAGE_DEPLOY.blob.core.windows.net/$DEPLOY_SCRIPTS_CONTAINER/$DEPLOY_DNS_MODULE?$DEPLOY_SAS_TOKEN"
 
@@ -425,5 +431,8 @@ az network application-gateway http-settings update \
 #Update the web site to allow trafic from the app gateway to the web app
 APPGATEWAY_PUBLICIP_ADDR=$(az network public-ip show -g $RG_SPOKE -n $APPGATEWAY_PUBLICIP --query "ipAddress" -o tsv)
 az webapp config access-restriction add -g $RG_SPOKE -n $WEBSITE --rule-name AppGateway --action Allow --ip-address $APPGATEWAY_PUBLICIP_ADDR --priority 200
+
+ENDDATE=$(date +"%H:%M:%S")
+echo "Script Complete: Started at $STARTDATE and ended at $ENDDATE"
 
 
