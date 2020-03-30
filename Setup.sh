@@ -1,7 +1,16 @@
+#!/bin/bash
+
+
+################################################################################
+# All the required static variables are declared here, most are derived from 
+# a common PREFIX 
+################################################################################
+
 PREFIX=mfdns02
 RG_HUB=$(echo $PREFIX)-hub
 RG_SPOKE=$(echo $PREFIX)-spoke
-LOC=eastus
+RG_DEPLOY=$(echo $PREFIX)-deploy
+LOC=centralus
 SUBID=$(az account list --query "[?isDefault].id" -o tsv)
 
 VNET_HUB=$(echo $PREFIX)-hub-vnet
@@ -25,10 +34,11 @@ DATA_SUBNET_IPRANGE=10.1.2.0/24
 HUB_TO_SPOKE_VNET_PEER=$(echo $PREFIX)-hub-spoke-peer
 SPOKE_TO_HUB_VNET_PEER=$(echo $PREFIX)-spoke-hub-peer
 
-STORAGE=$(echo $PREFIX)store
+STORAGE=$(echo $PREFIX)astore
 STORAGE_CONNECTION_NAME=$(echo $PREFIX)-private-link
 STORAGE_PRIVATE_ENDPOINT=$(echo $PREFIX)-storage-private-endpoint
-STORAGE_DNS_LINK=$(echo $PREFIX)-storage-dns-link
+STORAGE_DNS_LINK_SPOKE=$(echo $PREFIX)-storage-dns-spoke-link
+STORAGE_DNS_LINK_HUB=$(echo $PREFIX)-storage-dns-hub-link
 TABLE_DNS_ZONE=privatelink.table.core.windows.net
 TABLE_NAME=Demo
 
@@ -45,11 +55,43 @@ FWIPCONFIG_NAME="${PREFIX}fwconfig"
 SE_POLICY=$(echo $PREFIX)-se-policy
 SE_STORE_POLICY_DEF=$(echo $PREFIX)-se-store-policy-def
 
-#Create 2 resource groups
+STORAGE_DEPLOY=$(echo $PREFIX)depstore
+DEPLOY_SCRIPTS_CONTAINER=scripts
+
+USERLOGIN=AzureAdmin
+# User needs to provide a password for the VM (Win 2019 Default Password requirements apply)
+read -p 'Administrator Password for VM: ' USERPWD
+
+DNS_PUBLICIP=$(echo $PREFIX)-dns-ip
+DNS_VM=$(echo $PREFIX)-dns-vm
+DNS_DISK=$(echo $PREFIX)-dns-disk
+DNS_INTERNAL_NIC=$(echo $PREFIX)-dns-in-nic
+DNS_EXTERNAL_NIC=$(echo $PREFIX)-dns-ext-nic
+DNS_PRIVATE_IP_ADDRESS=10.0.1.128
+
+# Magic Azure Address (https://docs.microsoft.com/en-us/azure/virtual-network/what-is-ip-address-168-63-129-16)
+AZURE_DNS_SERVER=168.63.129.16
+
+DNS_HTTPBIN_APPLICATION_RULE=httpbin_rule
+DNS_HTTPBIN_APPLICATION_RULE_COLLECTION=httpbin_rule_collection
+
+APPGATEWAY_PUBLICIP=$(echo $PREFIX)-appgateway-ip
+APPGATEWAY=$(echo $PREFIX)-appgateway
+
+################################################################################
+# Create 3 resource groups 
+# 1. The HUB for the DNS and Firewall (Shared resources)
+# 2. The SPOKE for application specific code (website, app gateway, storage)
+# 3. DEPLOY for resources required during deployment (e.g. support scripts)
+################################################################################
 az group create -n $RG_HUB -l $LOC
 az group create -n $RG_SPOKE -l $LOC
+az group create -n $RG_DEPLOY -l $LOC
 
-#Create 2 networks
+################################################################################
+# Create 2 networks, HUB and SPOKE, and peer them so communication can flow 
+# between then. 
+################################################################################
 az network vnet create -n $VNET_HUB -g $RG_HUB --address-prefixes $VNET_HUB_IPRANGE
 az network vnet create -n $VNET_SPOKE -g $RG_SPOKE --address-prefixes $VNET_SPOKE_IPRANGE
 
@@ -84,8 +126,12 @@ HUBID=$(az network vnet show -g $RG_HUB -n $VNET_HUB --query id -o tsv)
 az network vnet peering create -g $RG_SPOKE -n $SPOKE_TO_HUB_VNET_PEER --vnet-name $VNET_SPOKE \
     --remote-vnet $HUBID --allow-vnet-access
 
-#Deploy a storage account
-az storage account create -n $STORAGE -g $RG_SPOKE --https-only
+################################################################################
+# Deploy a storage account, the storage account contains a table populated with 
+# 2 records.  The storage account uses a private endpoint to restrict traffic 
+# only to the VNET (via a Private DNS Zone)
+################################################################################
+az storage account create -n $STORAGE -g $RG_SPOKE --https-only --default-action Deny --bypass None
 
 STORAGEKEY=$(az storage account keys list -g $RG_SPOKE -n $STORAGE --query "[?keyName=='key1'].value" --output tsv)
 
@@ -104,8 +150,11 @@ az storage account network-rule add -g $RG_SPOKE --account-name $STORAGE --vnet 
 #Create a private DNS Zone for table storage
 az network private-dns zone create -g $RG_SPOKE -n $TABLE_DNS_ZONE
 
-az network private-dns link vnet create -g $RG_SPOKE -n $STORAGE_DNS_LINK -z $TABLE_DNS_ZONE \
-    -v $SPOKEID -e True
+az network private-dns link vnet create -g $RG_SPOKE -n $STORAGE_DNS_LINK_SPOKE -z $TABLE_DNS_ZONE \
+    -v $SPOKEID -e False
+
+az network private-dns link vnet create -g $RG_SPOKE -n $STORAGE_DNS_LINK_HUB -z $TABLE_DNS_ZONE \
+    -v $HUBID -e False
 
 #Create a private endpoint connection for the storage account 
 STORAGEID=$(az storage account show -n $STORAGE -g $RG_SPOKE --query id -o tsv)
@@ -118,7 +167,11 @@ PRIVATEIP=$(az resource show --ids $NETWORKINTERFACEID --api-version 2019-04-01 
 az network private-dns record-set a create --name $PRIVATEIP --zone-name $TABLE_DNS_ZONE --resource-group $RG_SPOKE  
 az network private-dns record-set a add-record --record-set-name $PRIVATEIP --zone-name $TABLE_DNS_ZONE --resource-group $RG_SPOKE -a $PRIVATEIP
 
-#Create an App Plan
+################################################################################
+# Create our web application (app plan and website)
+# The website is locked down to the vnet and the ip address of the user 
+# running the script
+################################################################################
 az appservice plan create -n $APPPLAN -g $RG_SPOKE --sku S1
 
 #Create the web app on the plan
@@ -139,7 +192,10 @@ az webapp config access-restriction add -g $RG_SPOKE -n $WEBSITE --rule-name Hom
 #Add my IP to the storage account for debugging
 az storage account network-rule add -g $RG_SPOKE --account-name $STORAGE --ip-address $MYIP
 
-#Add the setting to route all traffic though the vnet integration
+# Add the settings
+# to route all traffic though the vnet integration (WEBSITE_VNET_ROUTE_ALL)
+# to build the application when using git deployment (SCM_DO_BUILD_DURING_DEPLOYMENT)
+# the node version (WEBSITE_NODE_DEFAULT_VERSION)
 az webapp config appsettings set -g $RG_SPOKE -n $WEBSITE --settings WEBSITE_VNET_ROUTE_ALL=1 SCM_DO_BUILD_DURING_DEPLOYMENT=1 WEBSITE_NODE_DEFAULT_VERSION=10.15.2
 
 #Write the storage key and account name to app settings
@@ -147,6 +203,12 @@ az webapp config appsettings set -g $RG_SPOKE -n $WEBSITE --settings STORAGE_ACC
 
 #Deploy my sample node app to the site
 az webapp deployment source config --branch master --manual-integration --name $WEBSITE --repo-url https://github.com/fortunkam/simple-node-express-app --resource-group $RG_SPOKE
+
+################################################################################
+# Create the firewall
+# The firewall will only allow outgoing traffic to httpbin.org and requests to 
+# the DNS server
+################################################################################
 
 #Create the firewall public ip
 az network public-ip create -g $RG_HUB -n $FWPUBLICIP_NAME -l $LOC --sku "Standard"
@@ -174,25 +236,171 @@ FWPUBLIC_IP=$(az network public-ip show -g $RG_HUB -n $FWPUBLICIP_NAME --query "
 FWPRIVATE_IP=$(az network firewall show -g $RG_HUB -n $FWNAME --query "ipConfigurations[0].privateIpAddress" -o tsv)
 
 
-# Create UDR and add a route for the web subnet (spoke)
-
+# Create UDR and add a route for the web subnet (spoke), this ensures all traffic from the web app goes through the firewall
 az network route-table create -g $RG_SPOKE --name $FWROUTE_TABLE_NAME
 az network route-table route create -g $RG_SPOKE --name $FWROUTE_NAME --route-table-name $FWROUTE_TABLE_NAME --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $FWPRIVATE_IP --subscription $SUBID
-az network route-table route create -g $RG_SPOKE --name $FWROUTE_NAME_INTERNET --route-table-name $FWROUTE_TABLE_NAME --address-prefix $FWPUBLIC_IP/32 --next-hop-type Internet
+
+#ensure all DNS traffic to the DNS server is allowed
+az network firewall network-rule create -g $RG_HUB -f $FWNAME --collection-name 'dnsrules' -n 'dns' --protocols 'UDP' --source-addresses "$WEB_SUBNET_IPRANGE" --destination-addresses $DNS_PRIVATE_IP_ADDRESS --destination-ports '*' --action allow --priority 100
+
+#Ensure all traffic to httpbin.org is allowed (highly locked down)
+az network firewall application-rule create \
+    --collection-name $DNS_HTTPBIN_APPLICATION_RULE_COLLECTION \
+    --name $DNS_HTTPBIN_APPLICATION_RULE \
+    --firewall-name $FWNAME \
+    -g $RG_HUB \
+    --protocols HTTP=80 HTTPS=443 \
+    --action Allow \
+    --priority 100 \
+    --target-fqdns "httpbin.org" \
+    --source-addresses *
 
 #Add the UDR to the network
 az network vnet subnet update -g $RG_SPOKE --vnet-name $VNET_SPOKE --name $WEB_SUBNET --route-table $FWROUTE_TABLE_NAME
 
-#Confirm site is routing via the firewall
+################################################################################
+# Create the DNS Server
+# The default Azure DNS server cannot resolve private link address for web apps
+# We create out own DNS server and configure a forwarder for the table storage 
+# private link address to the azure servers (this is a limitation of the platform 
+# and will be fixed) for more information see
+# https://github.com/dmauser/PrivateLink/tree/master/DNS-Integration-Scenarios
+################################################################################
 
-#Create the app gateway
+#Create the DNS Server Public IP (for RDP debugging only!).
+az network public-ip create \
+    -n $DNS_PUBLICIP \
+    -g $RG_HUB \
+    --sku Standard
 
-#configure the app gateway
+#Create the DNS Server
+az vm create \
+    -n $DNS_VM \
+    -g $RG_HUB \
+    --private-ip-address $DNS_PRIVATE_IP_ADDRESS \
+    --public-ip-address $DNS_PUBLICIP \
+    --os-disk-name $DNS_DISK \
+    --admin-username $USERLOGIN \
+    --admin-password $USERPWD \
+    --assign-identity '[system]' \
+    --image Win2019Datacenter \
+    --subnet $VM_SUBNET \
+    --vnet-name $VNET_HUB
 
-#Create the DNS Server.
+# Deploy a new storage account to hold the deploy scripts
+
+#create a storage account
+az storage account create \
+    -g $RG_DEPLOY -n $STORAGE_DEPLOY
+
+#get the keys
+DEPLOY_STORAGEKEY=$(az storage account keys list -g $RG_DEPLOY -n $STORAGE_DEPLOY --query "[?keyName=='key1'].value" --output tsv)
+
+#create a blob container
+az storage container create \
+    --name $DEPLOY_SCRIPTS_CONTAINER \
+    --public-access off \
+    --account-name $STORAGE_DEPLOY \
+    --account-key $DEPLOY_STORAGEKEY
+
+
+# Give the VM persmission to access the blob account 
+
+SCOPE="/subscriptions/$SUBID/resourceGroups/$RG_DEPLOY/providers/Microsoft.Storage/storageAccounts/$STORAGE_DEPLOY"
+
+OBJECTID=$(az vm identity show --name $DNS_VM -g $RG_HUB --query principalId --output tsv) 
+
+az role assignment create --assignee $OBJECTID --role "Storage Blob Data Reader" --scope $SCOPE
 
 #Configure the DNS Server
 
-#Configure the UDR rules
+
+DEPLOY_DNS_MODULE=DNSServer.zip
+DEPLOY_DNS_FILE=DNSServer.ps1
+cd scripts
+cd DNSServer
+zip -r ../../$DEPLOY_DNS_MODULE *
+cd ..
+cd ..
+
+#upload the files
+az storage blob upload \
+    -f ./$DEPLOY_DNS_MODULE   \
+    -c $DEPLOY_SCRIPTS_CONTAINER \
+    -n $DEPLOY_DNS_MODULE \
+    --account-name $STORAGE_DEPLOY \
+    --account-key $DEPLOY_STORAGEKEY
+
+#Generate a SAS token for our file
+SAS_END=`date -u -d "60 minutes" '+%Y-%m-%dT%H:%MZ'`
+DEPLOY_SAS_TOKEN=$(az storage blob generate-sas -c $DEPLOY_SCRIPTS_CONTAINER -n $DEPLOY_DNS_MODULE --permissions r --expiry $SAS_END --https-only --account-key $DEPLOY_STORAGEKEY --account-name $STORAGE_DEPLOY)
+# Remove the quotes
+DEPLOY_SAS_TOKEN=${DEPLOY_SAS_TOKEN//\"/}
+
+MODULE_URL="https://$STORAGE_DEPLOY.blob.core.windows.net/$DEPLOY_SCRIPTS_CONTAINER/$DEPLOY_DNS_MODULE?$DEPLOY_SAS_TOKEN"
+
+INSTALL_DNS_SETTINGS=$( jq -n \
+                  --arg modurl "$MODULE_URL" \
+                  --arg configurationFunction "$DEPLOY_DNS_FILE\\DNSServer" \
+                  --arg machineName "$DNS_VM" \
+                  '{ModulesURL: $modurl, configurationFunction: $configurationFunction, Properties: { MachineName: $machineName}}' )
+
+#Install DNS Server via DSC
+
+az vm extension set \
+   --name DSC \
+   --publisher Microsoft.Powershell \
+   --version 2.19 \
+   --vm-name $DNS_VM \
+   --resource-group $RG_HUB \
+   --settings "$INSTALL_DNS_SETTINGS" 
+
+az vm restart -g $RG_HUB -n $DNS_VM
+
+#Configure the conditional forwarder zone on the dns server (to point at the table storage DNS name)
+CONFIGURE_DNS_ZONE_COMMAND="powershell.exe Add-DnsServerConditionalForwarderZone -Name $STORAGE.table.core.windows.net -MasterServers $AZURE_DNS_SERVER -PassThru"
+
+CONFIGURE_DNS_ZONE=$( jq -n \
+                  --arg psCommand "$CONFIGURE_DNS_ZONE_COMMAND" \
+                  '{fileUris: [], commandToExecute: $psCommand }' )
+
+az vm extension set \
+   --name CustomScriptExtension \
+   --publisher Microsoft.Compute \
+   --version 1.8 \
+   --vm-name $DNS_VM \
+   --resource-group $RG_HUB \
+   --settings "$CONFIGURE_DNS_ZONE"
+
+#use the DNS server on the vnet
+
+ az vm open-port \
+    --port 53 \
+    --resource-group $RG_HUB \
+    --name $DNS_VM
+
+az network vnet update -g $RG_HUB -n $VNET_HUB --dns-servers $DNS_PRIVATE_IP_ADDRESS
+
+az network vnet update -g $RG_SPOKE -n $VNET_SPOKE --dns-servers $DNS_PRIVATE_IP_ADDRESS
+
+################################################################################
+# Create the app gateway and configure with a rule to route traffic from the 
+# website
+################################################################################
+
+#Create the public ip for the app gateway
+az network public-ip create \
+    -n $APPGATEWAY_PUBLICIP \
+    -g $RG_SPOKE \
+    --sku Basic
+
+az network application-gateway create \
+    -g $RG_SPOKE \
+    -n $APPGATEWAY \
+    --public-ip-address $APPGATEWAY_PUBLICIP \
+    --subnet $APPGATEWAY_SUBNET \
+    --vnet-name $VNET_SPOKE \
+    --servers "$WEBSITE.azurewebsites.net"
+
 
 
