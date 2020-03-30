@@ -77,6 +77,8 @@ DNS_HTTPBIN_APPLICATION_RULE_COLLECTION=httpbin_rule_collection
 
 APPGATEWAY_PUBLICIP=$(echo $PREFIX)-appgateway-ip
 APPGATEWAY=$(echo $PREFIX)-appgateway
+APPGATEWAY_PROBE=$(echo $PREFIX)-appgateway-probe
+APPGATEWAY_PRIVATE_IP_ADDRESS=10.1.0.5
 
 ################################################################################
 # Create 3 resource groups 
@@ -400,7 +402,28 @@ az network application-gateway create \
     --public-ip-address $APPGATEWAY_PUBLICIP \
     --subnet $APPGATEWAY_SUBNET \
     --vnet-name $VNET_SPOKE \
-    --servers "$WEBSITE.azurewebsites.net"
+    --servers "$WEBSITE.azurewebsites.net" \
+    --private-ip-address $APPGATEWAY_PRIVATE_IP_ADDRESS
 
+az network application-gateway probe create \
+    --gateway-name $APPGATEWAY \
+    --name $APPGATEWAY_PROBE \
+    --path "/" \
+    --protocol Http \
+    --resource-group $RG_SPOKE \
+    --host-name-from-http-settings true
+
+#Update the http settings to set the host address to the web app name
+HTTPSETTING_NAME=$(az network application-gateway http-settings list --gateway-name $APPGATEWAY -g $RG_SPOKE --query "[0].name" -o tsv)
+az network application-gateway http-settings update \
+    -g $RG_SPOKE \
+    --gateway-name $APPGATEWAY \
+    --host-name-from-backend-pool true \
+    --name $HTTPSETTING_NAME \
+    --probe $APPGATEWAY_PROBE
+
+#Update the web site to allow trafic from the app gateway to the web app
+APPGATEWAY_PUBLICIP_ADDR=$(az network public-ip show -g $RG_SPOKE -n $APPGATEWAY_PUBLICIP --query "ipAddress" -o tsv)
+az webapp config access-restriction add -g $RG_SPOKE -n $WEBSITE --rule-name AppGateway --action Allow --ip-address $APPGATEWAY_PUBLICIP_ADDR --priority 200
 
 
