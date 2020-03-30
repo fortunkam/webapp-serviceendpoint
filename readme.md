@@ -11,5 +11,8 @@ The script relies on globally unique names so change the PREFIX variable before 
 Make sure you change the LOC varaible to your required region.  (a list of regions can be found by running the following command `az account list-locations --query "[].name" -o tsv`)
 Note: The script can take up to 60 minutes to run (provisioning an Application Gateway can take time).
 
+## Clean up
+I have added a delete-all script [here](./delete-all.sh) to remove all the resource groups (you will need to tweak the PREFIX variable).  Note: This deletes everything unprompted so be sure you want to use it!  (`bash delete-all.sh`)
+
 ## What is the script doing?
 
