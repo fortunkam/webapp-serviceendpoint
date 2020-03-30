@@ -15,4 +15,13 @@ Note: The script can take up to 60 minutes to run (provisioning an Application G
 I have added a delete-all script [here](./delete-all.sh) to remove all the resource groups (you will need to tweak the PREFIX variable).  Note: This deletes everything unprompted so be sure you want to use it!  (`bash delete-all.sh`)
 
 ## What is the script doing?
-
+The script will create 
+- 3 resource groups
+- 2 virtual networks (peered)
+- A storage account with table storage accessible via a private endpoint
+- A private DNS zone to allow resolution of the storage private endpoint
+- An App Service (Website + plan) running a simple node application, locked down using access restrictions and service endpoints
+- A Firewall that all outbound network traffic is routing through
+- An App Gateway that all inbound traffic to the app service is routed through.
+- A VM hosting a custom DNS Server.
+ 
