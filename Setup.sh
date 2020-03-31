@@ -6,7 +6,7 @@
 ################################################################################
 STARTDATE=$(date +"%H:%M:%S")
 
-PREFIX=mfdns05
+PREFIX=mfdns06
 RG_HUB=$(echo $PREFIX)-hub
 RG_SPOKE=$(echo $PREFIX)-spoke
 RG_DEPLOY=$(echo $PREFIX)-deploy
