@@ -33,7 +33,7 @@ The script will create
 ![Inbound traffic routing](/diagrams/inbound%20calls.png "inbound calls")
 
 1. A request comes into the Application gateway public ip address.  The App Gateway forwards the request onto the website.
-2. The web site uses a service endpoint to keep traffic on the Azure backbone for requests from the App Gateway.  The website also uses access restrictions to prevent access on the public endpoint to only the ip address of the user that ran the script.
+2. The website uses access restrictions to prevent access on the public endpoint to only the ip address of the Application Gateway and the user that ran the script.
 
 ## How are internet calls from my website routed?
 
@@ -60,4 +60,4 @@ NOTE: At the current point, App Service Plans with VNET Integration are unable t
 https://docs.microsoft.com/en-us/azure/virtual-network/what-is-ip-address-168-63-129-16
 4. The Azure DNS is aware of our Private DNS Zone so forwards the request there.
 5. The private DNS zone is configured to resolve the privatelink address to an ip address on the vnet.
-6. The request is routed to the storage account.
+6. The web app can now communicate directly with the storage account over the private endpoint ip address.
