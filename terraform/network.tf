@@ -41,6 +41,14 @@ resource "azurerm_subnet" "web" {
   virtual_network_name = azurerm_virtual_network.spoke.name
   address_prefix       = local.web_subnet_iprange
   service_endpoints = [ "Microsoft.Web" ]
+
+  delegation {
+    name = "webdelegation"
+    service_delegation {
+      name    = "Microsoft.Web/serverFarms"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
+    }
+  }
 }
 
 resource "azurerm_subnet" "data" {

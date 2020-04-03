@@ -16,7 +16,7 @@ I have added a delete-all script [here](./delete-all.sh) to remove all the resou
 
 ## Alternatively use the Terraform script
 In the /terraform folder are a selection of tf files.  You will need to have terraform installed (I am running v0.12.24 on Powershell Core 7).
-run `terraform init` in a powershell prompt and then run the [setup powershell script here](./terraform/setup.ps1), this script runs the `terraform apply`, applies the vnet integration (currently broken in terraform) and then deploys the sample app to the website.
+run `terraform init` in a powershell prompt and then run the [setup powershell script here](./terraform/setup.ps1), this script runs the `terraform apply` and then deploys the sample app to the website.
 The resource prefix and the location are defined as [variables](./terraform/variables.tf) and you should provide new values (particularly for the prefix). 
 
 ## What is the script doing?

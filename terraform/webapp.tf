@@ -42,8 +42,7 @@ resource "azurerm_app_service" "website" {
 
 }
 
-### This is currently broken, when resolved remove the vnet integration line from setup.ps1 and uncomment this
-# resource "azurerm_app_service_virtual_network_swift_connection" "webapp" {
-#   app_service_id = azurerm_app_service.website.id
-#   subnet_id      = azurerm_subnet.web.id
-# }
+resource "azurerm_app_service_virtual_network_swift_connection" "webapp" {
+  app_service_id = azurerm_app_service.website.id
+  subnet_id      = azurerm_subnet.web.id
+}
