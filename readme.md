@@ -18,6 +18,7 @@ I have added a delete-all script [here](./delete-all.sh) to remove all the resou
 In the /terraform folder are a selection of tf files.  You will need to have terraform installed (I am running v0.12.24 on Powershell Core 7).
 run `terraform init` in a powershell prompt and then run the [setup powershell script here](./terraform/setup.ps1), this script runs the `terraform apply` and then deploys the sample app to the website.
 The resource prefix and the location are defined as [variables](./terraform/variables.tf) and you should provide new values (particularly for the prefix). 
+The resources can be cleaned up by running `terraform destroy`
 
 ## What is the script doing?
 
