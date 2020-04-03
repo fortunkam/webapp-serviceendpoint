@@ -49,7 +49,7 @@ By default a website with a vnet intergration will always go direct for outbound
 
 1. The website has a VNET Integration to the web subnet.  
 2. The web subnet contains a UDR that routes all traffic to the Azure Firewall.
-3. The firewall contains an application rule that allows traffic to httpbi.org only.
+3. The firewall contains application rules that allow traffic to httpbin.org (for the running application), github and npm (for the application build).
 
 The `/ip` route on the website shows the call to httpbin.org/ip is successful and should also return the IP address of the firewall showing the request has been routed.
 
