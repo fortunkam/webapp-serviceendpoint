@@ -2,7 +2,7 @@
 
 #This script removes the resource groups (You will need to make the PREFIX match the one used to create the resources)
 
-PREFIX=mfdns06
+PREFIX=mfdns07
 RG_HUB=$(echo $PREFIX)-hub
 RG_SPOKE=$(echo $PREFIX)-spoke
 RG_DEPLOY=$(echo $PREFIX)-deploy

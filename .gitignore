@@ -1,4 +1,6 @@
 password.txt
 DNSServer.zip
 errors.txt
-/arm/**/*
+terraform/.terraform
+terraform/.terraform.*
+terraform/terraform.*

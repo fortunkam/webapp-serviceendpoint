@@ -6,7 +6,7 @@
 ################################################################################
 STARTDATE=$(date +"%H:%M:%S")
 
-PREFIX=mfdns06
+PREFIX=mfdns07
 RG_HUB=$(echo $PREFIX)-hub
 RG_SPOKE=$(echo $PREFIX)-spoke
 RG_DEPLOY=$(echo $PREFIX)-deploy
@@ -51,9 +51,6 @@ FWROUTE_TABLE_NAME="${PREFIX}fwrt"
 FWROUTE_NAME="${PREFIX}fwrn"
 FWROUTE_NAME_INTERNET="${PREFIX}fwinternet"
 FWIPCONFIG_NAME="${PREFIX}fwconfig"
-
-SE_POLICY=$(echo $PREFIX)-se-policy
-SE_STORE_POLICY_DEF=$(echo $PREFIX)-se-store-policy-def
 
 STORAGE_DEPLOY=$(echo $PREFIX)depstore
 DEPLOY_SCRIPTS_CONTAINER=scripts
