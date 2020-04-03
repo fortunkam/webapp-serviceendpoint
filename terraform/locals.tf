@@ -59,4 +59,8 @@ locals  {
     appgateway_backend_pool_name="${var.prefix}-appgateway-backend-pool"
     appgateway_ipconfig_name="${var.prefix}-appgateway-ipconfig"
     appgateway_request_routing_rule_name="${var.prefix}-appgateway-rule"
+    dns_github_application_rule_collection="github_rule_collection"
+    dns_github_application_rule="github_rule"
+    dns_npm_application_rule_collection="npm_rule_collection"
+    dns_npm_application_rule="npm_rule"
 }

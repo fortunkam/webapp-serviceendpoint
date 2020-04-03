@@ -75,3 +75,63 @@ resource "azurerm_firewall_application_rule_collection" "httpbin" {
     }
   }
 }
+
+resource "azurerm_firewall_application_rule_collection" "github" {
+  name                = local.dns_github_application_rule_collection
+  azure_firewall_name = azurerm_firewall.firewall.name
+  resource_group_name = azurerm_resource_group.hub.name
+  priority            = 200
+  action              = "Allow"
+
+  rule {
+    name = local.dns_github_application_rule
+
+    source_addresses = [
+      "*",
+    ]
+
+    target_fqdns = [
+      "github.com",
+    ]
+
+    protocol {
+      port = "443"
+      type = "Https"
+    }
+
+    protocol {
+      port = "80"
+      type = "Http"
+    }
+  }
+}
+
+resource "azurerm_firewall_application_rule_collection" "npm" {
+  name                = local.dns_npm_application_rule_collection
+  azure_firewall_name = azurerm_firewall.firewall.name
+  resource_group_name = azurerm_resource_group.hub.name
+  priority            = 300
+  action              = "Allow"
+
+  rule {
+    name = local.dns_npm_application_rule
+
+    source_addresses = [
+      "*",
+    ]
+
+    target_fqdns = [
+      "registry.npmjs.org",
+    ]
+
+    protocol {
+      port = "443"
+      type = "Https"
+    }
+
+    protocol {
+      port = "80"
+      type = "Http"
+    }
+  }
+}
