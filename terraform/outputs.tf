@@ -1,7 +1,3 @@
-output "dns_password" {
-    value = random_password.dns_password.result
-}
-
 output "spoke_resource_group" {
     value = local.resource_group_spoke_name
 }
