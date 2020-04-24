@@ -21,6 +21,7 @@ resource "azurerm_app_service" "website" {
 
   app_settings = {
     "WEBSITE_VNET_ROUTE_ALL"         = "1"
+    "WEBSITE_DNS_SERVER"         = local.azure_dns_server
     "SCM_DO_BUILD_DURING_DEPLOYMENT" = "1"
     "WEBSITE_NODE_DEFAULT_VERSION"   = "10.15.2"
     "STORAGE_ACCOUNT"                = azurerm_storage_account.data.name

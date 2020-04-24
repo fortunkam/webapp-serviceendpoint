@@ -4,9 +4,6 @@ variable location {
 variable prefix {
     default="mftfdns"
 }
-variable dns_username {
-    default="AzureAdmin"
-}
 
 
 

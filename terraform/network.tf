@@ -13,12 +13,6 @@ resource "azurerm_subnet" "firewall" {
   address_prefix       = local.firewall_subnet_iprange
 }
 
-resource "azurerm_subnet" "vm" {
-  name                 = local.vm_subnet
-  resource_group_name  = azurerm_resource_group.hub.name
-  virtual_network_name = azurerm_virtual_network.hub.name
-  address_prefix       = local.vm_subnet_iprange
-}
 
 resource "azurerm_virtual_network" "spoke" {
   name                = local.vnet_spoke_name

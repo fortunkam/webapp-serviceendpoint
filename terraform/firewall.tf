@@ -18,34 +18,6 @@ resource "azurerm_firewall" "firewall" {
   }
 }
 
-resource "azurerm_firewall_network_rule_collection" "dns" {
-  name                = "dnsrules"
-  azure_firewall_name = azurerm_firewall.firewall.name
-  resource_group_name = azurerm_resource_group.hub.name
-  priority            = 100
-  action              = "Allow"
-
-  rule {
-    name = "dns"
-
-    source_addresses = [
-      local.web_subnet_iprange
-    ]
-
-    destination_ports = [
-      "*",
-    ]
-
-    destination_addresses = [
-      local.dns_server_private_ip
-    ]
-
-    protocols = [
-      "UDP",
-    ]
-  }
-}
-
 resource "azurerm_firewall_application_rule_collection" "httpbin" {
   name                = local.dns_httpbin_application_rule_collection
   azure_firewall_name = azurerm_firewall.firewall.name
