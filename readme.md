@@ -58,7 +58,7 @@ The `/ip` route on the website shows the call to httpbin.org/ip is successful an
 ![outbound private endpoint routing](/diagrams/outbound%20calls%20to%20private%20endpoint.png "outbound private endpoint routing")
 
 1. Website requests a MYSTORAGE.table.core.windows.net address.  By default this would resolve to the public ip address (which is locked down)
-2. The website is configured to point it's DNS requests at the internal azure DNS Server 168-63-129-16. (https://docs.microsoft.com/en-us/azure/virtual-network/what-is-ip-address-168-63-129-16)
+2. The website is configured to point it's DNS requests at the internal azure DNS Server 168-63-129-16. (https://docs.microsoft.com/en-us/azure/virtual-network/what-is-ip-address-168-63-129-16). This uses the new `WEBSITE_DNS_SERVER` app setting in the web app (https://docs.microsoft.com/en-us/azure/app-service/web-sites-integrate-with-vnet)
 3. The Azure DNS is aware of our Private DNS Zone so forwards the request there.
 4. The private DNS zone is configured to resolve the privatelink address to an ip address on the vnet.
 5. The web app can now communicate directly with the storage account over the private endpoint ip address.
