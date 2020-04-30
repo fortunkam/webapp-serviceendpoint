@@ -41,6 +41,8 @@ resource "azurerm_app_service" "website" {
     }
   }
 
+  depends_on = [azurerm_application_gateway.appgateway]
+
 }
 
 resource "azurerm_app_service_virtual_network_swift_connection" "webapp" {
