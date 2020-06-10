@@ -1,5 +1,5 @@
 provider "azurerm" {
-  version = "~> 2.3"
+  version = "~> 2.13"
   features {}
 }
 provider "random" {

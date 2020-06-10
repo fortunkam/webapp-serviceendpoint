@@ -25,13 +25,15 @@ The resources can be cleaned up by running `terraform destroy`
 ![What gets deployed!](/diagrams/What%20gets%20deployed.png "What gets deployed")
 The script will create 
 - 2 resource groups
-- 2 virtual networks (peered)
-- 4 subnets
+- 1 virtual network
+- 3 subnets
 - A storage account with table storage accessible via a private endpoint
 - A private DNS zone to allow resolution of the storage private endpoint
 - An App Service (Website + plan) running a simple node application, locked down using access restrictions and service endpoints
-- A Firewall that all outbound network traffic is routing through
+- A NAT Gateway that all outbound network traffic is routing through
 - An App Gateway that all inbound traffic to the app service is routed through.
+
+**TODO: Update diagrams**
 
 ## How does the inbound traffic get routed to my website
 
@@ -48,8 +50,7 @@ The application that gets deployed makes calls to http://httpbin.org/ip to retri
 By default a website with a vnet intergration will always go direct for outbound internet calls (using the app service shared outbound ips).  By adding the `WEBSITE_VNET_ROUTE_ALL=1` setting it will use the UDR applied to the subnet.
 
 1. The website has a VNET Integration to the web subnet.  
-2. The web subnet contains a UDR that routes all traffic to the Azure Firewall.
-3. The firewall contains application rules that allow traffic to httpbin.org (for the running application), github and npm (for the application build).
+2. The web subnet has a NAT gateway associated with it (and a public ip)
 
 The `/ip` route on the website shows the call to httpbin.org/ip is successful and should also return the IP address of the firewall showing the request has been routed.
 
