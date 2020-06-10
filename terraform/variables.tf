@@ -1,5 +1,5 @@
 variable location {
-    default="centralus"
+    default="uksouth"
 }
 variable prefix {
     default="mftfdns"
